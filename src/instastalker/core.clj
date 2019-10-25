@@ -1,29 +1,56 @@
 (ns instastalker.core
   (:require [clj-http.client :as client]
-            [clojure.data.json :as json])
+            [clojure.data.json :as json]
+            [clojure.set :as set]
+            [me.raynes.fs :as fs])
   (:gen-class))
 
-(defn posts [resp]
-  (as-> resp v
-    (get v :body)
-    (re-find #"<script type=\"text/javascript\">window\._sharedData = (.*)</script>" v)
-    (some-> v
-            (get 1)
-            (json/read-str)
-            (get "entry_data")
-            (get "ProfilePage")
-            (get 0)
-            (get "graphql")
-            (get "user")
-            (get "edge_owner_to_timeline_media")
-            (get "edges")
-            )
-    (some->> v
-             (map #(when-let [v (get % "node")]
-                     {:id (get v "id") :url (get v "display_url")})))))
+(def db-path (fs/expand-home "~/.instastalker.db"))
+
+(defn load-db []
+  (try
+    (read-string (slurp db-path))
+    (catch java.io.FileNotFoundException e #{})))
+
+(defn parse-posts [body]
+  (when-let [arr (some-> (re-find #"<script type=\"text/javascript\">window\._sharedData = (.*)</script>" body)
+                         (get 1)
+                         (json/read-str)
+                         (get "entry_data")
+                         (get "ProfilePage")
+                         (get 0)
+                         (get "graphql")
+                         (get "user")
+                         (get "edge_owner_to_timeline_media")
+                         (get "edges"))]
+    (map #(when-let [node (get % "node")]
+            {:id (get node "id") :url (get node "display_url")}) arr)))
+
+(defn get-posts [profile]
+  (some-> (str "https://www.instagram.com/" profile)
+          (client/get)
+          (get :body)
+          (parse-posts)))
+
+(defn send-telegram [text chat-id bot-token]
+
+  (client/post (str  "https://api.telegram.org/bot" bot-token "/sendMessage")
+               {:form-params {:chat_id chat-id :text text}}))
+
+(defn send-posts [posts char-id bot-token]
+  (doseq [post posts]
+    (send-telegram (get post :url) char-id bot-token)))
+
+(defn dump-db [posts]
+  (spit db-path (pr-str posts)))
 
 (defn -main
-  "I don't do a whole lot ... yet."
   [& args]
-  (client/get "https://www.instagram.com/ori_levi_ganani/")
-  (println "Hello, World!"))
+  (let [[profile chat-id] args
+        bot-token (or (System/getenv "TELEGRAM_BOT_TOKEN")
+                      (throw (Exception. "Missing TELEGRAM_BOT_TOKEN")))
+        db (load-db)
+        new-posts (filter #(not (contains? db (get % :id))) (get-posts profile))]
+    (when (not (empty? new-posts))
+      (send-posts new-posts chat-id bot-token))
+    (dump-db (clojure.set/union db (apply hash-set (map #(get % :id) new-posts))))))
