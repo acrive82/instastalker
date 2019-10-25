@@ -16,13 +16,7 @@
   (when-let [arr (some-> (re-find #"<script type=\"text/javascript\">window\._sharedData = (.*)</script>" body)
                          (get 1)
                          (json/read-str)
-                         (get "entry_data")
-                         (get "ProfilePage")
-                         (get 0)
-                         (get "graphql")
-                         (get "user")
-                         (get "edge_owner_to_timeline_media")
-                         (get "edges"))]
+                         (get-in ["entry_data" "ProfilePage" 0 "graphql" "user" "edge_owner_to_timeline_media" "edges"]))]
     (map #(when-let [node (get % "node")]
             {:id (get node "id") :url (get node "display_url")}) arr)))
 
