@@ -6,7 +6,7 @@
   :dependencies [[org.clojure/clojure "1.10.0"]
                  [clj-http "3.10.0"]
                  [enlive "1.1.6"]
-                 [org.clojure/data.json "0.2.6"]
+                 [cheshire "5.9.0"]
                  [me.raynes/fs "1.4.6"]]
   :main ^:skip-aot instastalker.core
   :target-path "target/%s"
